@@ -1,5 +1,6 @@
 import React from 'react';
 import { render, screen } from '@testing-library/react';
+jest.mock('react-joyride', () => () => null);
 
 import FlowEditor from './FlowEditor';
 
