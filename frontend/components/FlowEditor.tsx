@@ -48,7 +48,7 @@ const FlowEditor: React.FC = () => {
   const { authFetch } = useAuth();
 
   useEffect(() => {
-    authFetch('/nodes')
+    authFetch('/plugins')
       .then((res) => res.json())
       .then((data) => setNodeTypes(data))
       .catch((err) => console.error(err));
