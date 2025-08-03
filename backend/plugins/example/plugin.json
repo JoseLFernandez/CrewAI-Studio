@@ -1,0 +1,11 @@
+{
+  "nodes": [
+    {
+      "type": "example",
+      "label": "Example Node",
+      "schema": {"type": "object", "properties": {}},
+      "icon": "🧩"
+    }
+  ]
+}
+
