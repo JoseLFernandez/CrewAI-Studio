@@ -158,6 +158,28 @@ docker-compose up --build
 
 Before running the application, ensure you update the `.env` file with your API keys and other necessary configurations. An example `.env` file is provided for reference.
 
+## Adding Custom Nodes
+
+The backend exposes a registry of available nodes in `backend/nodes.py`. Each node entry defines a label, a JSON schema describing its configuration, and an icon. To add your own component:
+
+1. Open `backend/nodes.py`.
+2. Use the `register_node` helper to register a new node type:
+
+   ```python
+   from backend.nodes import register_node
+
+   register_node(
+       "my_node",
+       label="My Node",
+       schema={"type": "object", "properties": {}},
+       icon="✨",
+   )
+   ```
+
+3. Restart the backend. The frontend fetches `/nodes` and will automatically display the new node in the palette.
+
+This allows developers to extend the editor without modifying the frontend.
+
 ## Troubleshooting
 In case of problems:
 - Delete the `venv/miniconda` folder and reinstall `crewai-studio`.

@@ -16,11 +16,11 @@ type FlowData = {
   edges: Edge[];
 };
 
-const nodeTypes = [
-  { type: 'tool', label: 'Tool' },
-  { type: 'agent', label: 'Agent' },
-  { type: 'task', label: 'Task' },
-];
+interface NodeType {
+  type: string;
+  label: string;
+  icon: string;
+}
 
 const FlowEditor: React.FC = () => {
   const wrapperRef = useRef<HTMLDivElement>(null);
@@ -28,6 +28,13 @@ const FlowEditor: React.FC = () => {
   const [nodes, setNodes] = useState<Node[]>([]);
   const [edges, setEdges] = useState<Edge[]>([]);
   const [flow, setFlow] = useState<FlowData>({ nodes: [], edges: [] });
+  const [nodeTypes, setNodeTypes] = useState<NodeType[]>([]);
+
+  useEffect(() => {
+    fetch('/nodes')
+      .then((res) => res.json())
+      .then((data) => setNodeTypes(data));
+  }, []);
 
   useEffect(() => {
     setFlow({ nodes, edges });
@@ -103,8 +110,13 @@ const FlowEditor: React.FC = () => {
               textAlign: 'center',
               cursor: 'grab',
               background: '#fafafa',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: 4,
             }}
           >
+            <span>{n.icon}</span>
             {n.label}
           </div>
         ))}
