@@ -330,3 +330,22 @@ def load_results():
 def delete_result(result_id):
     """Delete a result from the database."""
     delete_entity('result', result_id)
+
+def save_flow(flow_id, data):
+    """Persist a flow definition."""
+    save_entity('flow', flow_id, data)
+
+
+def load_flow(flow_id):
+    """Load a flow definition by ID."""
+    query = text('SELECT data FROM entities WHERE id = :id AND entity_type = :etype')
+    with get_db_connection() as conn:
+        result = conn.execute(query, {"id": flow_id, "etype": 'flow'}).mappings().first()
+    if result:
+        return json.loads(result["data"])
+    return None
+
+
+def delete_flow(flow_id):
+    """Delete a flow definition."""
+    delete_entity('flow', flow_id)
