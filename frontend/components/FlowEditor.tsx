@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useAuth, withAuth } from '../context/AuthContext';
 import RunConsole from './RunConsole';
+import Tour, { TourHandle } from './Tour';
 import ReactFlow, {
   addEdge,
   Background,
@@ -35,6 +36,8 @@ interface FlowRun {
 
 const FlowEditor: React.FC = () => {
   const wrapperRef = useRef<HTMLDivElement>(null);
+  const tourRef = useRef<TourHandle>(null);
+  const [helpOpen, setHelpOpen] = useState(false);
   const [reactFlowInstance, setReactFlowInstance] = useState<ReactFlowInstance | null>(null);
   const [nodes, setNodes] = useState<Node[]>([]);
   const [edges, setEdges] = useState<Edge[]>([]);
@@ -130,8 +133,44 @@ const FlowEditor: React.FC = () => {
   }, [fetchRuns]);
 
   return (
-    <div style={{ display: 'flex', height: '100%' }}>
+    <div style={{ display: 'flex', height: '100%', position: 'relative' }}>
+      <Tour ref={tourRef} />
+      <div style={{ position: 'absolute', top: 10, right: 10 }}>
+        <button onClick={() => setHelpOpen((o) => !o)}>Help</button>
+        {helpOpen && (
+          <div
+            style={{
+              position: 'absolute',
+              right: 0,
+              marginTop: 4,
+              background: '#fff',
+              border: '1px solid #ccc',
+              padding: 8,
+            }}
+          >
+            <div
+              style={{ cursor: 'pointer', marginBottom: 4 }}
+              onClick={() => {
+                tourRef.current?.start();
+                setHelpOpen(false);
+              }}
+            >
+              Restart Tour
+            </div>
+            <div>
+              <a
+                href="https://docs.crewai.studio"
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                Documentation
+              </a>
+            </div>
+          </div>
+        )}
+      </div>
       <aside
+        id="tour-node-panel"
         style={{
           padding: 10,
           width: 150,
@@ -165,6 +204,7 @@ const FlowEditor: React.FC = () => {
         ))}
       </aside>
       <div
+        id="tour-canvas"
         ref={wrapperRef}
         style={{ flexGrow: 1 }}
         onDrop={onDrop}
@@ -184,6 +224,7 @@ const FlowEditor: React.FC = () => {
         </ReactFlow>
       </div>
       <aside
+        id="tour-run-panel"
         style={{
           padding: 10,
           width: 250,
