@@ -28,3 +28,9 @@ app.include_router(nodes_router)
 app.include_router(flow_runs_router)
 app.include_router(auth_router, prefix="/auth")
 app.include_router(websocket_router)
+
+
+@app.get("/health")
+def health() -> dict[str, str]:
+    """Simple health check endpoint."""
+    return {"status": "ok"}
