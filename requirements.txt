@@ -17,3 +17,4 @@ docling
 duckduckgo-search>=8.0.2
 fastapi
 uvicorn
+python-jose[cryptography]

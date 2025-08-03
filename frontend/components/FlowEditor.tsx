@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { useAuth, withAuth } from '../context/AuthContext';
 import ReactFlow, {
   addEdge,
   Background,
@@ -42,11 +43,14 @@ const FlowEditor: React.FC = () => {
   const [runs, setRuns] = useState<FlowRun[]>([]);
   const [statusFilter, setStatusFilter] = useState<string>('all');
 
+  const { authFetch } = useAuth();
+
   useEffect(() => {
-    fetch('/nodes')
+    authFetch('/nodes')
       .then((res) => res.json())
-      .then((data) => setNodeTypes(data));
-  }, []);
+      .then((data) => setNodeTypes(data))
+      .catch((err) => console.error(err));
+  }, [authFetch]);
 
   useEffect(() => {
     setFlow({ nodes, edges });
@@ -104,16 +108,19 @@ const FlowEditor: React.FC = () => {
       statusFilter === 'all'
         ? `/flows/${flowId}/runs`
         : `/flows/${flowId}/runs?status=${statusFilter}`;
-    fetch(url)
+    authFetch(url)
       .then((res) => res.json())
-      .then((data) => setRuns(data));
-  }, [flowId, statusFilter]);
+      .then((data) => setRuns(data))
+      .catch((err) => console.error(err));
+  }, [flowId, statusFilter, authFetch]);
 
   const rerun = useCallback(
     (id: string) => {
-      fetch(`/flows/${flowId}/run`, { method: 'POST' }).then(() => fetchRuns());
+      authFetch(`/flows/${flowId}/run`, { method: 'POST' })
+        .then(() => fetchRuns())
+        .catch((err) => console.error(err));
     },
-    [flowId, fetchRuns]
+    [flowId, fetchRuns, authFetch]
   );
 
   useEffect(() => {
@@ -225,5 +232,5 @@ const FlowEditor: React.FC = () => {
   );
 };
 
-export default FlowEditor;
+export default withAuth(FlowEditor);
 
