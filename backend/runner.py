@@ -1,6 +1,8 @@
 import asyncio
 import json
 from typing import Any, AsyncGenerator, Callable, Dict, List
+from uuid import uuid4
+from datetime import datetime
 
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
@@ -88,19 +90,22 @@ def _build_crewai_objects(flow: Flow) -> Dict[str, Any]:
     return {"crew": crew, "tasks": ordered_tasks, "agents": agents}
 
 
-async def _run_flow(flow: Flow, callback: Callable[[str, Dict[str, Any]], Any]) -> Any:
+async def _run_flow(flow: Flow, run_id: str, callback: Callable[[str, Dict[str, Any]], Any]) -> Any:
     objects = _build_crewai_objects(flow)
     crew = objects["crew"]
-    await callback("start", {"tasks": [t.description for t in objects["tasks"]]})
+    await callback(
+        "start",
+        {"run_id": run_id, "tasks": [t.description for t in objects["tasks"]]},
+    )
     try:
         result = await asyncio.to_thread(crew.kickoff)
     except Exception as exc:  # pragma: no cover - best effort
         result = {"error": str(exc)}
-    await callback("completed", {"result": result})
+    await callback("completed", {"run_id": run_id, "result": result})
     return result
 
 
-async def _event_stream(flow: Flow) -> AsyncGenerator[str, None]:
+async def _event_stream(flow: Flow, run_id: str) -> AsyncGenerator[str, None]:
     queue: asyncio.Queue = asyncio.Queue()
 
     async def cb(event: str, data: Dict[str, Any]):
@@ -108,7 +113,20 @@ async def _event_stream(flow: Flow) -> AsyncGenerator[str, None]:
 
     async def runner():
         try:
-            await _run_flow(flow, cb)
+            result = await _run_flow(flow, run_id, cb)
+            db_utils.update_flow_run(
+                run_id,
+                status="completed",
+                output=result,
+                finished_at=datetime.utcnow(),
+            )
+        except Exception as exc:  # pragma: no cover - best effort
+            db_utils.update_flow_run(
+                run_id,
+                status="failed",
+                output={"error": str(exc)},
+                finished_at=datetime.utcnow(),
+            )
         finally:
             await queue.put({"event": "end", "data": {}})
 
@@ -127,4 +145,8 @@ async def run_flow(flow_id: str) -> StreamingResponse:
     if data is None:
         raise HTTPException(status_code=404, detail="Flow not found")
     flow = Flow(id=flow_id, **data)
-    return StreamingResponse(_event_stream(flow), media_type="text/event-stream")
+    run_id = str(uuid4())
+    db_utils.create_flow_run(run_id, flow_id)
+    return StreamingResponse(
+        _event_stream(flow, run_id), media_type="text/event-stream"
+    )

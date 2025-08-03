@@ -3,6 +3,7 @@ import os
 import json
 from my_tools import TOOL_CLASSES
 from sqlalchemy import create_engine, text
+from datetime import datetime
 
 # If you have an environment variable DB_URL for Postgres, use that. 
 # Otherwise, fallback to local SQLite file: 'sqlite:///crewai.db'
@@ -25,15 +26,26 @@ def get_db_connection():
     return engine.connect()
 
 def create_tables():
-    create_sql = text('''
+    create_entities_sql = text('''
         CREATE TABLE IF NOT EXISTS entities (
             id TEXT PRIMARY KEY,
             entity_type TEXT,
             data TEXT
         )
     ''')
+    create_flow_runs_sql = text('''
+        CREATE TABLE IF NOT EXISTS flow_runs (
+            id TEXT PRIMARY KEY,
+            flow_id TEXT NOT NULL,
+            status TEXT,
+            output TEXT,
+            started_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            finished_at TIMESTAMP
+        )
+    ''')
     with get_db_connection() as conn:
-        conn.execute(create_sql)
+        conn.execute(create_entities_sql)
+        conn.execute(create_flow_runs_sql)
         conn.commit()
 
 def initialize_db():
@@ -349,3 +361,67 @@ def load_flow(flow_id):
 def delete_flow(flow_id):
     """Delete a flow definition."""
     delete_entity('flow', flow_id)
+
+
+def create_flow_run(run_id: str, flow_id: str, status: str = "running") -> None:
+    """Create a new flow run entry."""
+    insert_sql = text(
+        '''INSERT INTO flow_runs (id, flow_id, status) VALUES (:id, :flow_id, :status)'''
+    )
+    with get_db_connection() as conn:
+        conn.execute(insert_sql, {"id": run_id, "flow_id": flow_id, "status": status})
+        conn.commit()
+
+
+def update_flow_run(
+    run_id: str,
+    *,
+    status: str | None = None,
+    output: dict | None = None,
+    finished_at: datetime | None = None,
+) -> None:
+    """Update fields for an existing flow run."""
+    fields = []
+    params = {"id": run_id}
+    if status is not None:
+        fields.append("status = :status")
+        params["status"] = status
+    if output is not None:
+        fields.append("output = :output")
+        params["output"] = json.dumps(output)
+    if finished_at is not None:
+        fields.append("finished_at = :finished_at")
+        params["finished_at"] = finished_at
+    if not fields:
+        return
+    sql = text(f"UPDATE flow_runs SET {', '.join(fields)} WHERE id = :id")
+    with get_db_connection() as conn:
+        conn.execute(sql, params)
+        conn.commit()
+
+
+def get_flow_runs(flow_id: str, status: str | None = None):
+    """Retrieve all runs for a given flow."""
+    query = 'SELECT * FROM flow_runs WHERE flow_id = :flow_id'
+    params: dict[str, object] = {"flow_id": flow_id}
+    if status:
+        query += ' AND status = :status'
+        params["status"] = status
+    query += ' ORDER BY started_at DESC'
+    with get_db_connection() as conn:
+        result = conn.execute(text(query), params)
+        rows = result.mappings().all()
+    for row in rows:
+        if row.get("output"):
+            row["output"] = json.loads(row["output"])
+    return rows
+
+
+def get_flow_run(run_id: str):
+    """Retrieve a single flow run by ID."""
+    query = text('SELECT * FROM flow_runs WHERE id = :id')
+    with get_db_connection() as conn:
+        row = conn.execute(query, {"id": run_id}).mappings().first()
+    if row and row.get("output"):
+        row["output"] = json.loads(row["output"])
+    return row
