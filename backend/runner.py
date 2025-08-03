@@ -8,13 +8,15 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 
 from .flows import Edge, Flow, Node
+from .websocket import broadcast_log
 
 from pathlib import Path
 import sys
 
-# Import db_utils from app folder
+# Import db_utils and ConsoleCapture from app folder
 sys.path.append(str(Path(__file__).resolve().parent.parent / "app"))
 import db_utils  # type: ignore
+from console_capture import ConsoleCapture  # type: ignore
 
 router = APIRouter(prefix="/flows", tags=["flows"])
 
@@ -97,10 +99,28 @@ async def _run_flow(flow: Flow, run_id: str, callback: Callable[[str, Dict[str, 
         "start",
         {"run_id": run_id, "tasks": [t.description for t in objects["tasks"]]},
     )
+
+    capture = ConsoleCapture()
+    capture.start()
+    finished = False
+
+    async def log_worker() -> None:
+        while not finished:
+            for line in capture.get_output():
+                await broadcast_log(run_id, line)
+            await asyncio.sleep(0.1)
+
+    worker = asyncio.create_task(log_worker())
+
     try:
         result = await asyncio.to_thread(crew.kickoff)
     except Exception as exc:  # pragma: no cover - best effort
         result = {"error": str(exc)}
+    finally:
+        finished = True
+        capture.stop()
+        await worker
+
     await callback("completed", {"run_id": run_id, "result": result})
     return result
 
