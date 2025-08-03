@@ -15,7 +15,7 @@ jest.mock('../context/AuthContext', () => ({
 }));
 
 jest.mock(
-  'react-flow-renderer',
+  '@xyflow/react',
   () => ({
     __esModule: true,
     default: ({ children }: any) => <div>{children}</div>,

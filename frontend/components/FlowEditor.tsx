@@ -7,16 +7,15 @@ import ReactFlow, {
   Background,
   Connection,
   Controls,
-  Edge,
-  Node,
   ReactFlowInstance,
   applyEdgeChanges,
   applyNodeChanges,
-} from 'react-flow-renderer';
+} from '@xyflow/react';
+import type { Edge as ReactFlowEdge, Node as ReactFlowNode } from '@xyflow/react';
 
 type FlowData = {
-  nodes: Node[];
-  edges: Edge[];
+  nodes: ReactFlowNode[];
+  edges: ReactFlowEdge[];
 };
 
 interface NodeType {
@@ -39,8 +38,8 @@ const FlowEditor: React.FC = () => {
   const tourRef = useRef<TourHandle>(null);
   const [helpOpen, setHelpOpen] = useState(false);
   const [reactFlowInstance, setReactFlowInstance] = useState<ReactFlowInstance | null>(null);
-  const [nodes, setNodes] = useState<Node[]>([]);
-  const [edges, setEdges] = useState<Edge[]>([]);
+  const [nodes, setNodes] = useState<ReactFlowNode[]>([]);
+  const [edges, setEdges] = useState<ReactFlowEdge[]>([]);
   const [flow, setFlow] = useState<FlowData>({ nodes: [], edges: [] });
   const [nodeTypes, setNodeTypes] = useState<NodeType[]>([]);
   const [flowId, setFlowId] = useState<string>('');
@@ -95,7 +94,7 @@ const FlowEditor: React.FC = () => {
         y: event.clientY - bounds.top,
       });
 
-      const newNode: Node = {
+      const newNode: ReactFlowNode = {
         id: `${type}_${+new Date()}`,
         type,
         position,
