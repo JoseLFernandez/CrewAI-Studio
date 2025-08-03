@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useAuth, withAuth } from '../context/AuthContext';
+import RunConsole from './RunConsole';
 import ReactFlow, {
   addEdge,
   Background,
@@ -42,6 +43,7 @@ const FlowEditor: React.FC = () => {
   const [flowId, setFlowId] = useState<string>('');
   const [runs, setRuns] = useState<FlowRun[]>([]);
   const [statusFilter, setStatusFilter] = useState<string>('all');
+  const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
 
   const { authFetch } = useAuth();
 
@@ -223,10 +225,19 @@ const FlowEditor: React.FC = () => {
               }}
             >
               <div>{r.status} - {r.started_at}</div>
-              <button onClick={() => rerun(r.id)}>Re-run</button>
+              <div style={{ display: 'flex', gap: 4 }}>
+                <button onClick={() => rerun(r.id)}>Re-run</button>
+                <button onClick={() => setSelectedRunId(r.id)}>Logs</button>
+              </div>
             </li>
           ))}
         </ul>
+        {selectedRunId && (
+          <div style={{ marginTop: 10 }}>
+            <h4>Logs for {selectedRunId}</h4>
+            <RunConsole runId={selectedRunId} />
+          </div>
+        )}
       </aside>
     </div>
   );
