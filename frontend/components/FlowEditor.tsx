@@ -2,7 +2,8 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useAuth, withAuth } from '../context/AuthContext';
 import RunConsole from './RunConsole';
 import Tour, { TourHandle } from './Tour';
-import ReactFlow, {
+import {
+  ReactFlow,
   addEdge,
   Background,
   Connection,
@@ -11,7 +12,12 @@ import ReactFlow, {
   applyEdgeChanges,
   applyNodeChanges,
 } from '@xyflow/react';
-import type { Edge as ReactFlowEdge, Node as ReactFlowNode } from '@xyflow/react';
+import type {
+  Edge as ReactFlowEdge,
+  EdgeChange,
+  Node as ReactFlowNode,
+  NodeChange,
+} from '@xyflow/react';
 
 type FlowData = {
   nodes: ReactFlowNode[];
@@ -37,7 +43,8 @@ const FlowEditor: React.FC = () => {
   const wrapperRef = useRef<HTMLDivElement>(null);
   const tourRef = useRef<TourHandle>(null);
   const [helpOpen, setHelpOpen] = useState(false);
-  const [reactFlowInstance, setReactFlowInstance] = useState<ReactFlowInstance | null>(null);
+  const [reactFlowInstance, setReactFlowInstance] =
+    useState<ReactFlowInstance<ReactFlowNode, ReactFlowEdge> | null>(null);
   const [nodes, setNodes] = useState<ReactFlowNode[]>([]);
   const [edges, setEdges] = useState<ReactFlowEdge[]>([]);
   const [flow, setFlow] = useState<FlowData>({ nodes: [], edges: [] });
@@ -61,12 +68,14 @@ const FlowEditor: React.FC = () => {
   }, [nodes, edges]);
 
   const onNodesChange = useCallback(
-    (changes) => setNodes((nds) => applyNodeChanges(changes, nds)),
+    (changes: NodeChange<ReactFlowNode>[]) =>
+      setNodes((nds) => applyNodeChanges(changes, nds)),
     []
   );
 
   const onEdgesChange = useCallback(
-    (changes) => setEdges((eds) => applyEdgeChanges(changes, eds)),
+    (changes: EdgeChange<ReactFlowEdge>[]) =>
+      setEdges((eds) => applyEdgeChanges(changes, eds)),
     []
   );
 
@@ -85,13 +94,12 @@ const FlowEditor: React.FC = () => {
       event.preventDefault();
 
       const type = event.dataTransfer.getData('application/reactflow');
-      const bounds = wrapperRef.current?.getBoundingClientRect();
 
-      if (!type || !reactFlowInstance || !bounds) return;
+      if (!type || !reactFlowInstance) return;
 
-      const position = reactFlowInstance.project({
-        x: event.clientX - bounds.left,
-        y: event.clientY - bounds.top,
+      const position = reactFlowInstance.screenToFlowPosition({
+        x: event.clientX,
+        y: event.clientY,
       });
 
       const newNode: ReactFlowNode = {
