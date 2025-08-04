@@ -7,6 +7,8 @@ import React, {
 } from 'react';
 import { useRouter } from 'next/router';
 
+const apiBase = (process.env.NEXT_PUBLIC_API_URL || '').replace(/\/$/, '');
+
 interface AuthContextType {
   user: string | null;
   accessToken: string | null;
@@ -45,7 +47,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const login = useCallback(async (username: string, password: string) => {
     const body = new URLSearchParams({ username, password });
-    const res = await fetch('/auth/login', { method: 'POST', body });
+    const res = await fetch(`${apiBase}/auth/login`, { method: 'POST', body });
     if (!res.ok) throw new Error('Login failed');
     const data = await res.json();
     saveTokens(data.access_token, data.refresh_token);
@@ -54,7 +56,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const logout = useCallback(async () => {
     if (accessToken) {
-      await fetch('/auth/logout', {
+      await fetch(`${apiBase}/auth/logout`, {
         method: 'POST',
         headers: { Authorization: `Bearer ${accessToken}` },
       });
@@ -68,7 +70,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const refresh = useCallback(async () => {
     if (!refreshToken) return null;
-    const res = await fetch('/auth/refresh', {
+    const res = await fetch(`${apiBase}/auth/refresh`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ refresh_token: refreshToken }),
