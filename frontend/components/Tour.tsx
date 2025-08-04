@@ -39,7 +39,7 @@ const Tour = forwardRef<TourHandle>((_props, ref) => {
 
   const handleCallback = (data: CallBackProps) => {
     const { status } = data;
-    if ([STATUS.FINISHED, STATUS.SKIPPED].includes(status)) {
+    if (status === STATUS.FINISHED || status === STATUS.SKIPPED) {
       localStorage.setItem(tourKey, 'true');
       setRun(false);
     }
