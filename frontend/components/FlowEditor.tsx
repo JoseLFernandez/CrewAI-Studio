@@ -11,8 +11,8 @@ import {
   applyEdgeChanges,
   applyNodeChanges,
 } from '@xyflow/react';
+import type { Edge as ReactFlowEdge } from '@xyflow/react';
 import type {
-  Edge as ReactFlowEdge,
   EdgeChange,
   Node as ReactFlowNode,
   NodeChange,
