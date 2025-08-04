@@ -3,7 +3,9 @@ import React, {
   useCallback,
   useContext,
   useState,
+  useEffect,
 } from 'react';
+import { useRouter } from 'next/router';
 
 interface AuthContextType {
   user: string | null;
@@ -118,8 +120,16 @@ export const useAuth = () => useContext(AuthContext);
 export function withAuth<P>(Component: React.ComponentType<P>) {
   return function WrappedComponent(props: P) {
     const { accessToken } = useAuth();
+    const router = useRouter();
+
+    useEffect(() => {
+      if (!accessToken) {
+        router.replace('/login');
+      }
+    }, [accessToken, router]);
+
     if (!accessToken) {
-      return <div>Unauthorized</div>;
+      return null;
     }
     return <Component {...props} />;
   };
