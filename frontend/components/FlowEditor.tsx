@@ -6,7 +6,6 @@ import {
   ReactFlow,
   addEdge,
   Background,
-  Connection,
   Controls,
   ReactFlowInstance,
   applyEdgeChanges,
@@ -17,6 +16,7 @@ import type {
   EdgeChange,
   Node as ReactFlowNode,
   NodeChange,
+  Connection,
 } from '@xyflow/react';
 
 type FlowData = {
