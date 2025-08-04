@@ -1,6 +1,6 @@
 import React from 'react';
 import { render, screen } from '@testing-library/react';
-jest.mock('react-joyride', () => () => null);
+jest.mock('react-joyride', () => () => null, { virtual: true });
 
 import FlowEditor from './FlowEditor';
 
@@ -18,7 +18,7 @@ jest.mock(
   '@xyflow/react',
   () => ({
     __esModule: true,
-    default: ({ children }: any) => <div>{children}</div>,
+    ReactFlow: ({ children }: any) => <div>{children}</div>,
     Background: () => <div data-testid="background" />,
     Controls: () => <div data-testid="controls" />,
     addEdge: jest.fn(),
