@@ -158,6 +158,8 @@ docker-compose up --build
 
 Before running the application, ensure you update the `.env` file with your API keys and other necessary configurations. An example `.env` file is provided for reference.
 
+Set `NEXT_PUBLIC_API_URL` to the base URL of your backend (for example, `http://localhost:8000` during development) so the frontend can communicate with the FastAPI service.
+
 ## Adding Custom Nodes
 
 The backend exposes a registry of available nodes in `backend/nodes.py`. Each node entry defines a label, a JSON schema describing its configuration, and an icon. To add your own component:
