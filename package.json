@@ -1,0 +1,5 @@
+{
+  "name": "crewai-studio",
+  "private": true,
+  "workspaces": ["frontend"]
+}
