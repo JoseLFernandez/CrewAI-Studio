@@ -20,7 +20,11 @@ jest.mock(
     __esModule: true,
     ReactFlow: ({ children }: any) => <div>{children}</div>,
     Background: () => <div data-testid="background" />,
+  BackgroundVariant: { Dots: 'dots', Lines: 'lines', Cross: 'cross' },
+  MiniMap: () => <div data-testid="minimap" />,
     Controls: () => <div data-testid="controls" />,
+  Handle: () => <div data-testid="handle" />,
+  Position: { Top: 'top', Bottom: 'bottom' },
     addEdge: jest.fn(),
     applyEdgeChanges: jest.fn(),
     applyNodeChanges: jest.fn(),
@@ -28,8 +32,9 @@ jest.mock(
   { virtual: true }
 );
 
-test('renders FlowEditor', () => {
-  render(<FlowEditor />);
-  expect(screen.getByPlaceholderText('Flow ID')).toBeInTheDocument();
+test('renders FlowEditor with canvas and inspector', () => {
+  render(<FlowEditor flowId="abc" initialName="My Flow" />);
+  expect(screen.getByPlaceholderText('Flow name')).toBeInTheDocument();
+  expect(screen.getByText('Inspector')).toBeInTheDocument();
 });
 

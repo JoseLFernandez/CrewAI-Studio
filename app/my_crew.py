@@ -1,4 +1,7 @@
 from crewai import Crew, Process
+from collections import deque, defaultdict
+from typing import List, Dict, Any
+import logging
 import streamlit as st
 from utils import rnd_id, fix_columns_width
 from streamlit import session_state as ss
@@ -23,11 +26,17 @@ class MyCrew:
         self.created_at = created_at or datetime.now().isoformat()
         self.knowledge_source_ids = knowledge_source_ids or []
         self.edit_key = f'edit_{self.id}'
-        if self.edit_key not in ss:
-            ss[self.edit_key] = False
+        try:
+            if self.edit_key not in ss:
+                ss[self.edit_key] = False
+        except Exception:
+            pass
         self.tasks_order_key = f'tasks_order_{self.id}'
-        if self.tasks_order_key not in ss:
-            ss[self.tasks_order_key] = [task.id for task in self.tasks]
+        try:
+            if self.tasks_order_key not in ss:
+                ss[self.tasks_order_key] = [task.id for task in self.tasks]
+        except Exception:
+            pass
 
     @property
     def edit(self):
@@ -38,61 +47,112 @@ class MyCrew:
         ss[self.edit_key] = value
 
     def get_crewai_crew(self, *args, **kwargs) -> Crew:
+        # Normalize process to crewai.Process when stored as a string in DB
+        proc = self.process
+        try:
+            if isinstance(proc, str):
+                proc = Process.hierarchical if proc.lower().startswith('h') else Process.sequential
+        except Exception:
+            proc = Process.sequential
+
         crewai_agents = [agent.get_crewai_agent() for agent in self.agents]
 
-        # Create a dictionary to hold the Task objects
-        task_objects = {}
+        # Topological sort (Kahn) for dependency resolution
+        logger = logging.getLogger(__name__)
+        id_to_task: Dict[str, Any] = {t.id: t for t in self.tasks}
+        order_index: Dict[str, int] = {t.id: i for i, t in enumerate(self.tasks)}
+        graph: Dict[str, List[str]] = defaultdict(list)
+        indegree: Dict[str, int] = {t.id: 0 for t in self.tasks}
 
-        def create_task(task):
-            if task.id in task_objects:
-                return task_objects[task.id]
+        def deps(t) -> List[str]:
+            d: List[str] = []
+            if getattr(t, "context_from_async_tasks_ids", None):
+                d.extend(t.context_from_async_tasks_ids)
+            if getattr(t, "context_from_sync_tasks_ids", None):
+                d.extend(t.context_from_sync_tasks_ids)
+            return d
 
-            context_tasks = []
-            if task.async_execution or task.context_from_async_tasks_ids or task.context_from_sync_tasks_ids:
-                for context_task_id in (task.context_from_async_tasks_ids or []) + (task.context_from_sync_tasks_ids or []):
-                    if context_task_id not in task_objects:
-                        context_task = next((t for t in self.tasks if t.id == context_task_id), None)
-                        if context_task:
-                            context_tasks.append(create_task(context_task))
-                        else:
-                            print(f"Warning: Context task with id {context_task_id} not found for task {task.id}")
-                    else:
-                        context_tasks.append(task_objects[context_task_id])
+        for t in self.tasks:
+            for dep_id in deps(t):
+                if dep_id in id_to_task:
+                    graph[dep_id].append(t.id)
+                    indegree[t.id] += 1
+                else:
+                    logger.warning(
+                        "Task %s depends on missing task %s; ignoring this dependency.",
+                        t.id,
+                        dep_id,
+                    )
 
-            # Only pass context if it's an async task or if specific context is defined
-            if task.async_execution or context_tasks:
-                crewai_task = task.get_crewai_task(context_from_async_tasks=context_tasks)
+        queue = deque(sorted([tid for tid, deg in indegree.items() if deg == 0], key=lambda x: order_index[x]))
+        created: Dict[str, Any] = {}
+        resolved_order: List[str] = []
+
+        while queue:
+            tid = queue.popleft()
+            t = id_to_task[tid]
+            ctx_ids = deps(t)
+            ctx_tasks = [created[d] for d in ctx_ids if d in created]
+            # Only pass context if async or context exists
+            if getattr(t, "async_execution", False) or ctx_tasks:
+                created[tid] = t.get_crewai_task(context_from_async_tasks=ctx_tasks)
             else:
-                crewai_task = task.get_crewai_task()
+                created[tid] = t.get_crewai_task()
+            resolved_order.append(tid)
+            for nxt in sorted(graph.get(tid, []), key=lambda x: order_index[x]):
+                indegree[nxt] -= 1
+                if indegree[nxt] == 0:
+                    queue.append(nxt)
 
-            task_objects[task.id] = crewai_task
-            return crewai_task
+        if len(resolved_order) != len(self.tasks):
+            cyclic = [tid for tid in indegree.keys() if tid not in resolved_order]
+            logger.warning(
+                "Detected circular dependencies: %s. Creating tasks without context.",
+                ", ".join(cyclic),
+            )
+            for tid in cyclic:
+                if tid not in created:
+                    try:
+                        created[tid] = id_to_task[tid].get_crewai_task()
+                    except Exception as e:
+                        logger.error("Error creating task %s without context: %s", tid, e)
 
-        # Create all tasks, resolving dependencies recursively
-        for task in self.tasks:
-            create_task(task)
+        crewai_tasks = []
+        for t in self.tasks:
+            ct = created.get(t.id)
+            if ct is not None:
+                crewai_tasks.append(ct)
 
-        # Collect the final list of tasks in the original order
-        crewai_tasks = [task_objects[task.id] for task in self.tasks]
-
-        # Add knowledge sources if they exist
+        # Add knowledge sources if they exist, with guards
         knowledge_sources = []
-        if 'knowledge_sources' in ss and self.knowledge_source_ids:
-            valid_knowledge_source_ids = []
-            
-            for ks_id in self.knowledge_source_ids:
-                ks = next((k for k in ss.knowledge_sources if k.id == ks_id), None)
-                if ks:
+        try:
+            has_ss = 'knowledge_sources' in ss
+        except Exception:
+            has_ss = False
+        if self.knowledge_source_ids and has_ss:
+            all_sources = getattr(ss, 'knowledge_sources', []) or []
+            ids_set = set(self.knowledge_source_ids)
+            available_ids = {k.id for k in all_sources}
+            missing = ids_set - available_ids
+            if missing:
+                logger.warning(
+                    "Some knowledge source ids not found and will be skipped: %s",
+                    ", ".join(sorted(missing)),
+                )
+            valid_ids: List[str] = []
+            for ks in all_sources:
+                if ks.id in ids_set:
                     try:
                         knowledge_sources.append(ks.get_crewai_knowledge_source())
-                        valid_knowledge_source_ids.append(ks_id)
+                        valid_ids.append(ks.id)
                     except Exception as e:
-                        print(f"Error loading knowledge source {ks.id}: {str(e)}")
-            
-            # If any knowledge sources were invalid, update the list
-            if len(valid_knowledge_source_ids) != len(self.knowledge_source_ids):
-                self.knowledge_source_ids = valid_knowledge_source_ids
-                db_utils.save_crew(self)
+                        logger.error("Error loading knowledge source %s: %s", ks.id, e)
+            if len(valid_ids) != len(self.knowledge_source_ids):
+                self.knowledge_source_ids = valid_ids
+                try:
+                    db_utils.save_crew(self)
+                except Exception:
+                    pass
 
         # Create the crew with knowledge sources
         if self.manager_llm:
@@ -100,7 +160,7 @@ class MyCrew:
                 agents=crewai_agents,
                 tasks=crewai_tasks,
                 cache=self.cache,
-                process=self.process,
+                process=proc,
                 max_rpm=self.max_rpm,
                 verbose=self.verbose,
                 manager_llm=create_llm(self.manager_llm),
@@ -114,7 +174,7 @@ class MyCrew:
                 agents=crewai_agents,
                 tasks=crewai_tasks,
                 cache=self.cache,
-                process=self.process,
+                process=proc,
                 max_rpm=self.max_rpm,
                 verbose=self.verbose,
                 manager_agent=self.manager_agent.get_crewai_agent(),
@@ -123,11 +183,11 @@ class MyCrew:
                 knowledge_sources=knowledge_sources if knowledge_sources else None,
                 *args, **kwargs
             )
-        cr = Crew(
+        return Crew(
             agents=crewai_agents,
             tasks=crewai_tasks,
             cache=self.cache,
-            process=self.process,
+            process=proc,
             max_rpm=self.max_rpm,
             verbose=self.verbose,
             memory=self.memory,
@@ -135,7 +195,6 @@ class MyCrew:
             knowledge_sources=knowledge_sources if knowledge_sources else None,
             *args, **kwargs
         )
-        return cr
     
     def update_knowledge_sources(self):
         self.knowledge_source_ids = ss[f'knowledge_sources_{self.id}']
@@ -225,6 +284,53 @@ class MyCrew:
 
     def draw(self,expanded=False, buttons=True):
         self.validate_manager_llm()
+        if self.edit:
+            self.render_edit_form()
+        else:
+            self.render_summary(expanded, buttons)
+
+    @staticmethod
+    def status_icon(is_valid: bool) -> str:
+        return "" if is_valid else "❗"
+
+    def render_summary(self, expanded: bool, buttons: bool) -> None:
+        fix_columns_width()
+        title = f"{self.status_icon(self.is_valid())} Crew: {self.name}".strip()
+        with st.expander(title, expanded=expanded):
+            st.markdown(f"**Process:** {self.process}")
+            if self.process == Process.hierarchical:
+                st.markdown(f"**Manager LLM:** {self.manager_llm}")
+                st.markdown(f"**Manager Agent:** {self.manager_agent.role if self.manager_agent else 'None'}")
+            st.markdown(f"**Verbose:** {self.verbose}")
+            st.markdown(f"**Memory:** {self.memory}")
+            st.markdown(f"**Cache:** {self.cache}")
+            st.markdown(f"**Planning:** {self.planning}")
+            st.markdown(f"**Max req/min:** {self.max_rpm}")
+            st.markdown("**Tasks:**")
+            valid_tasks = [t for t in self.tasks if t.agent and t.agent.id in [a.id for a in self.agents]]
+            self.render_task_list(valid_tasks)
+            if self.knowledge_source_ids and 'knowledge_sources' in ss:
+                source_names = [ks.name for ks in ss.knowledge_sources if ks.id in self.knowledge_source_ids]
+                st.markdown(f"**Knowledge Sources:** {', '.join(source_names)}")
+            if buttons:
+                col1, col2 = st.columns(2)
+                with col1:
+                    st.button("Edit", on_click=self.set_editable, key=f"btn_edit_{self.id}", args=(True,))
+                with col2:
+                    st.button("Delete", on_click=self.delete, key=f"btn_delete_{self.id}")
+            self.is_valid(show_warning=True)
+
+    def render_task_list(self, tasks: List[Any]) -> None:
+        for i, task in enumerate(tasks, 1):
+            with st.container(border=True):
+                async_tag = "(async)" if getattr(task, 'async_execution', False) else ""
+                st.markdown(f"**{i}.{async_tag}  {task.description}**")
+                st.markdown(f"**Agent:** {task.agent.role if task.agent else 'None'}")
+                tools_list = ", ".join([tool.name for tool in task.agent.tools]) if task.agent else "None"
+                st.markdown(f" **Tools:** {tools_list}")
+                st.markdown(f" **LLM:** {task.agent.llm_provider_model}")
+
+    def render_edit_form(self) -> None:
         name_key = f"name_{self.id}"
         process_key = f"process_{self.id}"
         verbose_key = f"verbose_{self.id}"
@@ -236,76 +342,23 @@ class MyCrew:
         planning_key = f"planning_{self.id}"
         cache_key = f"cache_{self.id}"
         max_rpm_key = f"max_rpm_{self.id}"
-        
-        if self.edit:
-            with st.container(border=True):
-                st.text_input("Name (just id, it doesn't affect anything)", value=self.name, key=name_key, on_change=self.update_name)
-                st.selectbox("Process", options=[Process.sequential, Process.hierarchical], index=[Process.sequential, Process.hierarchical].index(self.process), key=process_key, on_change=self.update_process)
-                st.multiselect("Agents", options=[agent.role for agent in ss.agents], default=[agent.role for agent in self.agents], key=agents_key, on_change=self.update_agents)                
-                # Filter tasks by selected agents
-                available_tasks = [task for task in ss.tasks if task.agent and task.agent.id in [agent.id for agent in self.agents]]
-                available_task_ids = [task.id for task in available_tasks]
-                default_task_ids = [task.id for task in self.tasks if task.id in available_task_ids]             
-                st.multiselect("Tasks", options=available_task_ids, default=default_task_ids, format_func=lambda x: next(task.description for task in ss.tasks if task.id == x), key=tasks_key, on_change=self.update_tasks)                
-                st.selectbox("Manager LLM", options=["None"] + llm_providers_and_models(), index=0 if self.manager_llm is None else llm_providers_and_models().index(self.manager_llm) + 1, key=manager_llm_key, on_change=self.update_manager_llm, disabled=(self.process != Process.hierarchical))
-                st.selectbox("Manager Agent", options=["None"] + [agent.role for agent in ss.agents], index=0 if self.manager_agent is None else [agent.role for agent in ss.agents].index(self.manager_agent.role) + 1, key=manager_agent_key, on_change=self.update_manager_agent, disabled=(self.process != Process.hierarchical))
-                st.checkbox("Verbose", value=self.verbose, key=verbose_key, on_change=self.update_verbose)
-                st.checkbox("Memory", value=self.memory, key=memory_key, on_change=self.update_memory)
-                st.checkbox("Cache", value=self.cache, key=cache_key, on_change=self.update_cache)
-                st.checkbox("Planning", value=self.planning, key=planning_key, on_change=self.update_planning)
-                st.number_input("Max req/min", value=self.max_rpm, key=max_rpm_key, on_change=self.update_max_rpm)  
-                # for some reason knowledge sources for crews are not working, use the knowledge sources in the agents instead
-                # if 'knowledge_sources' in ss and len(ss.knowledge_sources) > 0:
-                #     knowledge_source_options = [ks.id for ks in ss.knowledge_sources]
-                #     knowledge_source_labels = {ks.id: ks.name for ks in ss.knowledge_sources}
-                #     valid_knowledge_sources = [ks_id for ks_id in self.knowledge_source_ids 
-                #                             if ks_id in knowledge_source_options]
-
-                #     if len(valid_knowledge_sources) != len(self.knowledge_source_ids):
-                #         self.knowledge_source_ids = valid_knowledge_sources
-                #         db_utils.save_crew(self)
-                #     st.multiselect(
-                #         "Knowledge Sources",
-                #         options=knowledge_source_options,
-                #         default=valid_knowledge_sources,
-                #         format_func=lambda x: knowledge_source_labels.get(x, "Unknown"),
-                #         key=f"knowledge_sources_{self.id}",
-                #         on_change=self.update_knowledge_sources
-                #     )
-
-                st.button("Save", on_click=self.set_editable, args=(False,), key=rnd_id())
-        else:
-            fix_columns_width()
-            expander_title = f"Crew: {self.name}" if self.is_valid() else f"❗ Crew: {self.name}"
-            with st.expander(expander_title, expanded=expanded):
-                st.markdown(f"**Process:** {self.process}")
-                if self.process == Process.hierarchical:
-                    st.markdown(f"**Manager LLM:** {self.manager_llm}")
-                    st.markdown(f"**Manager Agent:** {self.manager_agent.role if self.manager_agent else 'None'}")
-                st.markdown(f"**Verbose:** {self.verbose}")
-                st.markdown(f"**Memory:** {self.memory}")
-                st.markdown(f"**Cache:** {self.cache}")
-                st.markdown(f"**Planning:** {self.planning}")
-                st.markdown(f"**Max req/min:** {self.max_rpm}")
-                st.markdown("**Tasks:**")
-                for i, task in enumerate([task for task in self.tasks if task.agent and task.agent.id in [agent.id for agent in self.agents]], 1):
-                    with st.container(border=True):
-                        async_tag = "(async)" if task.async_execution else ""
-                        st.markdown(f"**{i}.{async_tag}  {task.description}**")
-                        st.markdown(f"**Agent:** {task.agent.role if task.agent else 'None'}")
-                        tools_list = ", ".join([tool.name for tool in task.agent.tools]) if task.agent else "None"
-                        st.markdown(f" **Tools:** {tools_list}")
-                        st.markdown(f" **LLM:** {task.agent.llm_provider_model}")
-                if self.knowledge_source_ids and 'knowledge_sources' in ss:
-                    source_names = [ks.name for ks in ss.knowledge_sources if ks.id in self.knowledge_source_ids]
-                    st.markdown(f"**Knowledge Sources:** {', '.join(source_names)}")
-                if buttons:
-                    col1, col2 = st.columns(2)
-                    with col1:                    
-                        st.button("Edit", on_click=self.set_editable, key=rnd_id(), args=(True,))
-                    with col2:                   
-                        st.button("Delete", on_click=self.delete, key=rnd_id())
-                self.is_valid(show_warning=True)
+        with st.container(border=True):
+            st.text_input("Name (just id, it doesn't affect anything)", value=self.name, key=name_key, on_change=self.update_name)
+            st.selectbox("Process", options=[Process.sequential, Process.hierarchical], index=[Process.sequential, Process.hierarchical].index(self.process), key=process_key, on_change=self.update_process)
+            st.multiselect("Agents", options=[agent.role for agent in ss.agents], default=[agent.role for agent in self.agents], key=agents_key, on_change=self.update_agents)
+            # Filter tasks by selected agents
+            available_tasks = [task for task in ss.tasks if task.agent and task.agent.id in [agent.id for agent in self.agents]]
+            available_task_ids = [task.id for task in available_tasks]
+            default_task_ids = [task.id for task in self.tasks if task.id in available_task_ids]
+            st.multiselect("Tasks", options=available_task_ids, default=default_task_ids, format_func=lambda x: next(task.description for task in ss.tasks if task.id == x), key=tasks_key, on_change=self.update_tasks)
+            st.selectbox("Manager LLM", options=["None"] + llm_providers_and_models(), index=0 if self.manager_llm is None else llm_providers_and_models().index(self.manager_llm) + 1, key=manager_llm_key, on_change=self.update_manager_llm, disabled=(self.process != Process.hierarchical))
+            st.selectbox("Manager Agent", options=["None"] + [agent.role for agent in ss.agents], index=0 if self.manager_agent is None else [agent.role for agent in ss.agents].index(self.manager_agent.role) + 1, key=manager_agent_key, on_change=self.update_manager_agent, disabled=(self.process != Process.hierarchical))
+            st.checkbox("Verbose", value=self.verbose, key=verbose_key, on_change=self.update_verbose)
+            st.checkbox("Memory", value=self.memory, key=memory_key, on_change=self.update_memory)
+            st.checkbox("Cache", value=self.cache, key=cache_key, on_change=self.update_cache)
+            st.checkbox("Planning", value=self.planning, key=planning_key, on_change=self.update_planning)
+            st.number_input("Max req/min", value=self.max_rpm, key=max_rpm_key, on_change=self.update_max_rpm)
+            st.button("Save", on_click=self.set_editable, args=(False,), key=f"btn_save_{self.id}")
 
     def set_editable(self, edit):
         self.edit = edit

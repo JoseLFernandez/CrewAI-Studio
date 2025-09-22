@@ -8,41 +8,71 @@ from crewai import LLM
 from langchain_openai.chat_models.base import BaseChatOpenAI
 from litellm import completion
 
+def _safe_has_session_env() -> bool:
+    try:
+        return hasattr(st, "session_state") and ("env_vars" in st.session_state)
+    except Exception:
+        return False
+
+
 def load_secrets_fron_env():
+    """Load .env and cache into Streamlit session if available; otherwise no-op."""
     load_dotenv(override=True)
-    if "env_vars" not in st.session_state:
-        st.session_state.env_vars = {
-            "OPENAI_API_KEY": os.getenv("OPENAI_API_KEY"),
-            "OPENAI_API_BASE": os.getenv("OPENAI_API_BASE", "https://api.openai.com/v1/"),
-            "GROQ_API_KEY": os.getenv("GROQ_API_KEY"),
-            "LMSTUDIO_API_BASE": os.getenv("LMSTUDIO_API_BASE"),
-            "ANTHROPIC_API_KEY": os.getenv("ANTHROPIC_API_KEY"),
-            "OLLAMA_HOST": os.getenv("OLLAMA_HOST"),
-            "XAI_API_KEY": os.getenv("XAI_API_KEY"),
-        }
-    else:
-        st.session_state.env_vars = st.session_state.env_vars
+    try:
+        if "env_vars" not in st.session_state:
+            st.session_state.env_vars = {
+                "OPENAI_API_KEY": os.getenv("OPENAI_API_KEY"),
+                "OPENAI_API_BASE": os.getenv("OPENAI_API_BASE", "https://api.openai.com/v1/"),
+                "GROQ_API_KEY": os.getenv("GROQ_API_KEY"),
+                "LMSTUDIO_API_BASE": os.getenv("LMSTUDIO_API_BASE"),
+                "ANTHROPIC_API_KEY": os.getenv("ANTHROPIC_API_KEY"),
+                "OLLAMA_HOST": os.getenv("OLLAMA_HOST"),
+                "XAI_API_KEY": os.getenv("XAI_API_KEY"),
+            }
+    except Exception:
+        # Not running under Streamlit; environment variables are still loaded via dotenv
+        pass
 
 def switch_environment(new_env_vars):
+    """Set os.environ values; mirror into Streamlit session if available."""
     for key, value in new_env_vars.items():
         if value is not None:
             os.environ[key] = value
-            st.session_state.env_vars[key] = value
+            try:
+                if _safe_has_session_env():
+                    st.session_state.env_vars[key] = value
+            except Exception:
+                pass
 
 def restore_environment():
-    for key, value in st.session_state.env_vars.items():
-        if value is not None:
-            os.environ[key] = value
-        elif key in os.environ:
-            del os.environ[key]
+    """Restore environment from Streamlit cache if present; otherwise no-op."""
+    try:
+        for key, value in (st.session_state.env_vars.items() if _safe_has_session_env() else []):
+            if value is not None:
+                os.environ[key] = value
+            elif key in os.environ:
+                del os.environ[key]
+    except Exception:
+        pass
 
 def safe_pop_env_var(key):
     os.environ.pop(key, None)
 
+def _get_env(key: str, default: str | None = None) -> str | None:
+    try:
+        if _safe_has_session_env():
+            return st.session_state.env_vars.get(key, os.getenv(key, default))
+    except Exception:
+        pass
+    return os.getenv(key, default)
+
+
 def create_openai_llm(model, temperature):
+    # Ensure .env is loaded at least once
+    load_dotenv(override=False)
     switch_environment({
-        "OPENAI_API_KEY": st.session_state.env_vars["OPENAI_API_KEY"],
-        "OPENAI_API_BASE": st.session_state.env_vars["OPENAI_API_BASE"],
+        "OPENAI_API_KEY": _get_env("OPENAI_API_KEY"),
+        "OPENAI_API_BASE": _get_env("OPENAI_API_BASE", "https://api.openai.com/v1/"),
     })
     api_key = os.getenv("OPENAI_API_KEY")
     api_base = os.getenv("OPENAI_API_BASE")
@@ -54,33 +84,32 @@ def create_openai_llm(model, temperature):
 
 def create_anthropic_llm(model, temperature):
     switch_environment({
-        "ANTHROPIC_API_KEY": st.session_state.env_vars["ANTHROPIC_API_KEY"],
+        "ANTHROPIC_API_KEY": _get_env("ANTHROPIC_API_KEY"),
     })
     api_key = os.getenv("ANTHROPIC_API_KEY")
 
     if api_key:
+        # Newer LangChain providers read API keys from environment; pass minimal args
         return ChatAnthropic(
-            anthropic_api_key=api_key,
-            model_name=model,
+            model=model,
             temperature=temperature,
-            max_tokens=4095,
         )
     else:
         raise ValueError("Anthropic API key not set in .env file")
 
 def create_groq_llm(model, temperature):
     switch_environment({
-        "GROQ_API_KEY": st.session_state.env_vars["GROQ_API_KEY"],
+        "GROQ_API_KEY": _get_env("GROQ_API_KEY"),
     })
     api_key = os.getenv("GROQ_API_KEY")
 
     if api_key:
-        return ChatGroq(groq_api_key=api_key, model_name=model, temperature=temperature, max_tokens=4095)
+        return ChatGroq(model=model, temperature=temperature)
     else:
         raise ValueError("Groq API key not set in .env file")
 
 def create_ollama_llm(model, temperature):
-    host = st.session_state.env_vars["OLLAMA_HOST"]
+    host = _get_env("OLLAMA_HOST")
     if host:
         switch_environment({
             "OPENAI_API_KEY": "ollama",  # Nastaví OpenAI API klíč na "ollama"
@@ -93,7 +122,7 @@ def create_ollama_llm(model, temperature):
 
 def create_xai_llm(model, temperature):
     host = "https://api.x.ai/v1"
-    api_key = st.session_state.env_vars.get("XAI_API_KEY")
+    api_key = _get_env("XAI_API_KEY")
 
     if not api_key:
         raise ValueError("XAI_API_KEY must be set in .env file")
@@ -113,16 +142,16 @@ def create_xai_llm(model, temperature):
 def create_lmstudio_llm(model, temperature):
     switch_environment({
         "OPENAI_API_KEY": "lm-studio",
-        "OPENAI_API_BASE": st.session_state.env_vars["LMSTUDIO_API_BASE"],
+        "OPENAI_API_BASE": _get_env("LMSTUDIO_API_BASE"),
     })
     api_base = os.getenv("OPENAI_API_BASE")
 
     if api_base:
         return ChatOpenAI(
-            openai_api_key="lm-studio",
-            openai_api_base=api_base,
+            model=model,
+            api_key="lm-studio",
+            base_url=api_base,
             temperature=temperature,
-            max_tokens=4095,
         )
     else:
         raise ValueError("LM Studio API base not set in .env file")

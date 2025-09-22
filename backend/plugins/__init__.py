@@ -38,7 +38,7 @@ def _plugin_config_files() -> Iterable[Path]:
                 yield config
 
 
-def load_plugins(register_fn: Callable[[str, Any], None]) -> None:
+def load_plugins(register_fn: Callable[..., None]) -> None:
     """Load all plugins and register their nodes.
 
     Args:

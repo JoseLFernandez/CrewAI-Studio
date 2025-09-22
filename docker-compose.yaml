@@ -1,4 +1,4 @@
-version: '3.9'
+version: '4.0'
 
 services:
   db:
@@ -29,6 +29,34 @@ services:
       # - DB_URL=${DB_URL}
     ports:
       - "8501:8501"
+
+  # FastAPI Backend with agents/tasks/crews APIs
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    container_name: crewai_api
+    depends_on:
+      - db
+    env_file:
+      - .env
+    environment:
+      DB_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
+    ports:
+      - "8000:8000"
+
+  # React Frontend
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: crewai_frontend
+    depends_on:
+      - api
+    environment:
+      NEXT_PUBLIC_API_URL: http://localhost:8000
+    ports:
+      - "3001:3000"
 
 volumes:
   db-data:

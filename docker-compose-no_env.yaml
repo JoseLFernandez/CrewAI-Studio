@@ -32,5 +32,44 @@ services:
       - "${WEB_PORT:-8501}:8501"
     restart: always
 
+  # FastAPI Backend with agents/tasks/crews APIs
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    container_name: crewai_api
+    depends_on:
+      - db
+    environment:
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_API_BASE: ${OPENAI_API_BASE:-}
+      OPENAI_PROXY_MODELS: ${OPENAI_PROXY_MODELS:-}
+      GROQ_API_KEY: ${GROQ_API_KEY:-}
+      LMSTUDIO_API_BASE: ${LMSTUDIO_API_BASE:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      AGENTOPS_API_KEY: ${AGENTOPS_API_KEY:-}
+      AGENTOPS_ENABLED: ${AGENTOPS_ENABLED:-False}
+      OLLAMA_HOST: ${OLLAMA_HOST:-}
+      OLLAMA_MODELS: ${OLLAMA_MODELS:-}
+      SERPER_API_KEY: ${SERPER_API_KEY:-}
+      DB_URL: postgresql://${POSTGRES_USER:-crewaiuser}:${POSTGRES_PASSWORD:-secret123}@db:5432/${POSTGRES_DB:-crewai}
+    ports:
+      - "${API_PORT:-8000}:8000"
+    restart: always
+
+  # React Frontend
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: crewai_frontend
+    depends_on:
+      - api
+    environment:
+      NEXT_PUBLIC_API_URL: http://localhost:${API_PORT:-8000}
+    ports:
+      - "${FRONTEND_PORT:-3001}:3001"
+    restart: always
+
 volumes:
   db-data:

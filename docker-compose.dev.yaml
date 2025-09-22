@@ -1,0 +1,29 @@
+# Development override for docker-compose
+# Usage: docker-compose -f docker-compose.yaml -f docker-compose.dev.yaml up
+
+version: '3.9'
+
+services:
+  # API service with hot reload for development
+  api:
+    volumes:
+      - ./app:/CrewAI-Studio/app
+      - ./backend:/CrewAI-Studio/backend
+    environment:
+      - DEBUG=true
+    command: ["python", "-m", "uvicorn", "backend.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+
+  # Frontend with hot reload for development  
+  frontend:
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    command: ["npm", "run", "dev"]
+    environment:
+      - NODE_ENV=development
+
+  # Streamlit with hot reload
+  web:
+    volumes:
+      - ./app:/CrewAI-Studio/app
+    command: ["streamlit", "run", "./app/app.py", "--server.headless", "true", "--server.runOnSave", "true"]

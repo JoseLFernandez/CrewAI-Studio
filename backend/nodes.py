@@ -33,6 +33,15 @@ register_node("tool", label="Tool", schema={"type": "object", "properties": {}},
 register_node("agent", label="Agent", schema={"type": "object", "properties": {}}, icon="🤖")
 register_node("task", label="Task", schema={"type": "object", "properties": {}}, icon="📌")
 
+# n8n-like core nodes
+register_node("start", label="Start", schema={"type": "object", "properties": {}}, icon="🔵")
+register_node("if", label="IF", schema={"type": "object", "properties": {"expression": {"type": "string"}}}, icon="🔀")
+register_node("merge", label="Merge", schema={"type": "object", "properties": {}}, icon="🔂")
+register_node("set", label="Set", schema={"type": "object", "properties": {"fields": {"type": "object"}}}, icon="📝")
+register_node("http_request", label="HTTP Request", schema={"type": "object", "properties": {"url": {"type": "string"}, "method": {"type": "string", "enum": ["GET","POST","PUT","DELETE"]}, "headers": {"type": "object"}, "body": {"type": "object"}}}, icon="🌐")
+register_node("code", label="Code", schema={"type": "object", "properties": {"script": {"type": "string"}}}, icon="💻")
+register_node("delay", label="Delay", schema={"type": "object", "properties": {"ms": {"type": "number"}}}, icon="⏱️")
+
 # Load plugin-defined nodes
 load_plugins(register_node)
 

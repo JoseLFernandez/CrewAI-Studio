@@ -13,8 +13,9 @@ const RunConsole: React.FC<Props> = ({ runId }) => {
 
   const start = () => {
     if (connected) return;
-    const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws';
-    const ws = new WebSocket(`${protocol}://${window.location.host}/ws/flow-runs/${runId}`);
+  const base = (process.env.NEXT_PUBLIC_API_URL || window.location.origin).replace(/\/$/, '');
+  const wsBase = base.replace(/^http/, 'ws');
+  const ws = new WebSocket(`${wsBase}/ws/flow-runs/${runId}`);
     ws.onmessage = (ev) => setLogs((prev) => [...prev, ev.data]);
     ws.onclose = () => setConnected(false);
     wsRef.current = ws;
@@ -32,12 +33,23 @@ const RunConsole: React.FC<Props> = ({ runId }) => {
     }
   }, [logs, autoScroll]);
 
+  // Auto-start on new runId
+  useEffect(() => {
+    setLogs([]);
+    setConnected(false);
+    // wait a tick to ensure any prior sockets are closed
+    const t = setTimeout(() => start(), 50);
+    return () => clearTimeout(t);
+  }, [runId]);
+
   return (
     <div>
       <div style={{ marginBottom: 4 }}>
         <button onClick={connected ? stop : start}>{connected ? 'Stop' : 'Start'}</button>
-        <label style={{ marginLeft: 8 }}>
+        <label htmlFor="autoScroll" style={{ marginLeft: 8 }}>
           <input
+            id="autoScroll"
+            name="autoScroll"
             type="checkbox"
             checked={autoScroll}
             onChange={(e) => setAutoScroll(e.target.checked)}
@@ -56,9 +68,11 @@ const RunConsole: React.FC<Props> = ({ runId }) => {
           padding: 4,
         }}
       >
-        {logs.map((line, idx) => (
-          <div key={idx}>{line}</div>
-        ))}
+        {logs.length === 0 ? (
+          <div style={{ color: '#6ee7b7' }}>Waiting for logs…</div>
+        ) : (
+          logs.map((line, idx) => <div key={idx}>{line}</div>)
+        )}
       </div>
     </div>
   );

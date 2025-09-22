@@ -37,19 +37,22 @@ class MyAgent:
         llm = create_llm(self.llm_provider_model, temperature=self.temperature)
         tools = [tool.create_tool() for tool in self.tools]
         
-        # Add knowledge sources if they exist
+        # Add knowledge sources if they exist (guarded for non-Streamlit backend usage)
         knowledge_sources = []
-        if 'knowledge_sources' in ss and self.knowledge_source_ids:
-            valid_knowledge_source_ids = []
-            
-            for ks_id in self.knowledge_source_ids:
-                ks = next((k for k in ss.knowledge_sources if k.id == ks_id), None)
-                if ks:
-                    try:
-                        knowledge_sources.append(ks.get_crewai_knowledge_source())
-                        valid_knowledge_source_ids.append(ks_id)
-                    except Exception as e:
-                        print(f"Error loading knowledge source {ks.id}: {str(e)}")
+        try:
+            if 'knowledge_sources' in ss and self.knowledge_source_ids:
+                valid_knowledge_source_ids = []
+                for ks_id in self.knowledge_source_ids:
+                    ks = next((k for k in ss.knowledge_sources if k.id == ks_id), None)
+                    if ks:
+                        try:
+                            knowledge_sources.append(ks.get_crewai_knowledge_source())
+                            valid_knowledge_source_ids.append(ks_id)
+                        except Exception as e:
+                            print(f"Error loading knowledge source {ks.id}: {str(e)}")
+        except Exception:
+            # Session state not available; skip knowledge sources
+            pass
         if knowledge_sources:
             print(f"Loaded {len(knowledge_sources)} knowledge sources for agent {self.id}")
             print(knowledge_sources)

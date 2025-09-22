@@ -1,6 +1,7 @@
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from typing import Any, List, Optional
+from datetime import datetime
 from pathlib import Path
 import sys
 
@@ -24,7 +25,16 @@ router = APIRouter(tags=["flow_runs"])
 @router.get("/flows/{flow_id}/runs", response_model=List[FlowRun], summary="List runs for a flow")
 def list_flow_runs(flow_id: str, status: Optional[str] = None) -> List[FlowRun]:
     runs = db_utils.get_flow_runs(flow_id, status)
-    return [FlowRun(**run) for run in runs]
+    serialized: List[FlowRun] = []
+    for run in runs:
+        started = run.get("started_at")
+        finished = run.get("finished_at")
+        if isinstance(started, datetime):
+            run["started_at"] = started.isoformat()
+        if isinstance(finished, datetime):
+            run["finished_at"] = finished.isoformat()
+        serialized.append(FlowRun(**run))
+    return serialized
 
 
 @router.get("/flow-runs/{run_id}", response_model=FlowRun, summary="Get a flow run by ID")

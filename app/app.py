@@ -9,6 +9,7 @@ from pg_crew_run import PageCrewRun
 from pg_export_crew import PageExportCrew
 from pg_results import PageResults
 from pg_knowledge import PageKnowledge
+from pg_flows import PageFlows
 from dotenv import load_dotenv
 from llms import load_secrets_fron_env
 import os
@@ -16,6 +17,7 @@ import os
 def pages():
     return {
         'Crews': PageCrews(),
+        'Flows': PageFlows(),
         'Tools': PageTools(),
         'Agents': PageAgents(),
         'Tasks': PageTasks(),
@@ -29,6 +31,7 @@ def load_data():
     ss.agents = db_utils.load_agents()
     ss.tasks = db_utils.load_tasks()
     ss.crews = db_utils.load_crews()
+    ss.flows = db_utils.load_flows()
     ss.tools = db_utils.load_tools()
     ss.enabled_tools = db_utils.load_tools_state()
     ss.knowledge_sources = db_utils.load_knowledge_sources()

@@ -30,13 +30,19 @@ const AuthContext = createContext<AuthContextType>({
 });
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [accessToken, setAccessToken] = useState<string | null>(
-    typeof window === 'undefined' ? null : localStorage.getItem('accessToken')
-  );
-  const [refreshToken, setRefreshToken] = useState<string | null>(
-    typeof window === 'undefined' ? null : localStorage.getItem('refreshToken')
-  );
+  const [accessToken, setAccessToken] = useState<string | null>(null);
+  const [refreshToken, setRefreshToken] = useState<string | null>(null);
   const [user, setUser] = useState<string | null>(null);
+  const [isHydrated, setIsHydrated] = useState(false);
+
+  // Handle hydration - load tokens from localStorage after component mounts
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      setAccessToken(localStorage.getItem('accessToken'));
+      setRefreshToken(localStorage.getItem('refreshToken'));
+      setIsHydrated(true);
+    }
+  }, []);
 
   const saveTokens = (access: string, refresh: string) => {
     setAccessToken(access);
@@ -46,12 +52,36 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const login = useCallback(async (username: string, password: string) => {
+    console.log('Login attempt:', { username, apiBase });
     const body = new URLSearchParams({ username, password });
-    const res = await fetch(`${apiBase}/auth/login`, { method: 'POST', body });
-    if (!res.ok) throw new Error('Login failed');
-    const data = await res.json();
-    saveTokens(data.access_token, data.refresh_token);
-    setUser(username);
+    console.log('Request body:', body.toString());
+    
+    try {
+      const res = await fetch(`${apiBase}/auth/login`, { 
+        method: 'POST', 
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+        },
+        body 
+      });
+      
+      console.log('Response status:', res.status);
+      console.log('Response ok:', res.ok);
+      
+      if (!res.ok) {
+        const errorText = await res.text();
+        console.log('Error response:', errorText);
+        throw new Error('Login failed');
+      }
+      
+      const data = await res.json();
+      console.log('Login successful:', data);
+      saveTokens(data.access_token, data.refresh_token);
+      setUser(username);
+    } catch (error) {
+      console.error('Login error:', error);
+      throw error;
+    }
   }, []);
 
   const logout = useCallback(async () => {
@@ -86,18 +116,23 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const authFetch = useCallback(
     async (input: RequestInfo, init: RequestInit = {}) => {
+      // Convert relative URLs to absolute URLs
+      const url = typeof input === 'string' && input.startsWith('/') 
+        ? `${apiBase}${input}` 
+        : input;
+      
       const headers: Record<string, string> = {
         ...(init.headers as Record<string, string>) || {},
       };
       if (accessToken) {
         headers['Authorization'] = `Bearer ${accessToken}`;
       }
-      let res = await fetch(input, { ...init, headers });
+      let res = await fetch(url, { ...init, headers });
       if (res.status === 401 || res.status === 403) {
         const newToken = await refresh();
         if (!newToken) throw new Error('Unauthorized');
         headers['Authorization'] = `Bearer ${newToken}`;
-        res = await fetch(input, { ...init, headers });
+        res = await fetch(url, { ...init, headers });
         if (res.status === 401 || res.status === 403) {
           await logout();
           throw new Error('Unauthorized');
@@ -105,7 +140,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
       return res;
     },
-    [accessToken, refresh, logout]
+    [accessToken, refresh, logout, apiBase]
   );
 
   return (
@@ -119,19 +154,29 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
 export const useAuth = () => useContext(AuthContext);
 
-export function withAuth<P>(Component: React.ComponentType<P>) {
+export function withAuth<P extends {}>(Component: React.ComponentType<P>) {
   return function WrappedComponent(props: P) {
     const { accessToken } = useAuth();
     const router = useRouter();
+    const [isMounted, setIsMounted] = useState(false);
 
     useEffect(() => {
-      if (!accessToken) {
+      setIsMounted(true);
+    }, []);
+
+    useEffect(() => {
+      if (isMounted && !accessToken) {
         router.replace('/login');
       }
-    }, [accessToken, router]);
+    }, [accessToken, router, isMounted]);
+
+    // Prevent hydration mismatch by not rendering until mounted
+    if (!isMounted) {
+      return <div>Loading...</div>;
+    }
 
     if (!accessToken) {
-      return null;
+      return <div>Redirecting to login...</div>;
     }
     return <Component {...props} />;
   };

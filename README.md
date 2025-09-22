@@ -128,6 +128,12 @@ Conda will be installed locally in the project folder. No need for a pre-existin
 
 ## Running with Docker Compose
 
+CrewAI Studio now includes a complete multi-service architecture with:
+- **Streamlit App** (Traditional interface) - Port 8501
+- **FastAPI Backend** (REST APIs for agents/tasks/crews) - Port 8000  
+- **React Frontend** (Modern interface) - Port 3000
+- **PostgreSQL Database** - Port 5432
+
 To quickly set up and run CrewAI-Studio using Docker Compose, follow these steps:
 
 ### Prerequisites
@@ -152,7 +158,94 @@ cp .env_example .env
 docker-compose up --build
 ```
 
-4. Access the application: http://localhost:8501
+4. Access the applications:
+   - **Streamlit Interface**: http://localhost:8501 (Traditional interface)
+   - **React Interface**: http://localhost:3001 (Modern interface with agents/tasks management)
+   - **FastAPI Backend**: http://localhost:8000 (REST API endpoints)
+   - **API Documentation**: http://localhost:8000/docs (Swagger UI)
+
+### Service Architecture
+
+The Docker setup includes these services:
+
+- **`web`**: Streamlit application (existing interface)
+- **`api`**: FastAPI backend with REST endpoints for:
+  - `/crews` - Crew management  
+  - `/agents` - Agent management
+  - `/tasks` - Task management
+  - `/flows` - Flow management
+- **`frontend`**: React/Next.js application with modern UI
+- **`db`**: PostgreSQL database (shared by all services)
+
+### Environment Variables
+
+You can customize ports and other settings using environment variables:
+
+```bash
+# Port configuration
+WEB_PORT=8501          # Streamlit app port
+API_PORT=8000          # FastAPI backend port  
+FRONTEND_PORT=3001     # React frontend port
+
+# API configuration
+NEXT_PUBLIC_API_URL=http://localhost:8000  # Backend URL for frontend
+```
+
+### Quick Start with Docker Helper Script
+
+A convenient helper script is provided to manage the Docker services:
+
+```bash
+# Make the script executable (first time only)
+chmod +x docker.sh
+
+# Start all services in production mode
+./docker.sh start
+
+# Start with development hot-reload
+./docker.sh dev
+
+# View logs from all services  
+./docker.sh logs
+
+# Stop all services
+./docker.sh stop
+
+# See all available commands
+./docker.sh help
+```
+
+### Development Mode
+
+For development with hot-reload capabilities:
+
+```bash
+# Start with development configuration
+docker-compose -f docker-compose.yaml -f docker-compose.dev.yaml up
+
+# Or use the helper script
+./docker.sh dev
+```
+
+This enables:
+- FastAPI auto-reload on code changes
+- React hot module replacement  
+- Streamlit auto-refresh on file changes
+
+### Individual Service Management
+
+You can also run individual services:
+
+```bash
+# Start only the database and API
+docker-compose up db api
+
+# Start only Streamlit and database  
+docker-compose up db web
+
+# View logs for specific service
+docker-compose logs -f api
+```
 
 ## Configuration
 

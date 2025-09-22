@@ -197,7 +197,7 @@ def delete_task(task_id):
 def save_crew(crew):
     data = {
         'name': crew.name,
-        'process': crew.process,
+    'process': (crew.process if isinstance(crew.process, str) else getattr(crew.process, 'value', str(crew.process))),
         'verbose': crew.verbose,
         'agent_ids': [agent.id for agent in crew.agents],
         'task_ids': [task.id for task in crew.tasks],
@@ -358,6 +358,18 @@ def load_flow(flow_id):
     return None
 
 
+def load_flows():
+    """Load all flow definitions."""
+    rows = load_entities('flow')
+    flows = []
+    for row in rows:
+        flow_id, data = row
+        flow_data = data.copy()
+        flow_data['id'] = flow_id
+        flows.append(flow_data)
+    return flows
+
+
 def delete_flow(flow_id):
     """Delete a flow definition."""
     delete_entity('flow', flow_id)
@@ -391,7 +403,7 @@ def update_flow_run(
         params["output"] = json.dumps(output)
     if finished_at is not None:
         fields.append("finished_at = :finished_at")
-        params["finished_at"] = finished_at
+        params["finished_at"] = finished_at.isoformat() if isinstance(finished_at, datetime) else str(finished_at)
     if not fields:
         return
     sql = text(f"UPDATE flow_runs SET {', '.join(fields)} WHERE id = :id")
@@ -411,10 +423,17 @@ def get_flow_runs(flow_id: str, status: str | None = None):
     with get_db_connection() as conn:
         result = conn.execute(text(query), params)
         rows = result.mappings().all()
+    # Convert to list of dicts so we can safely mutate
+    output_rows = []
     for row in rows:
-        if row.get("output"):
-            row["output"] = json.loads(row["output"])
-    return rows
+        d = dict(row)
+        if d.get("output"):
+            try:
+                d["output"] = json.loads(d["output"])  # type: ignore[arg-type]
+            except Exception:
+                pass
+        output_rows.append(d)
+    return output_rows
 
 
 def get_flow_run(run_id: str):
@@ -422,6 +441,12 @@ def get_flow_run(run_id: str):
     query = text('SELECT * FROM flow_runs WHERE id = :id')
     with get_db_connection() as conn:
         row = conn.execute(query, {"id": run_id}).mappings().first()
-    if row and row.get("output"):
-        row["output"] = json.loads(row["output"])
-    return row
+    if not row:
+        return None
+    d = dict(row)
+    if d.get("output"):
+        try:
+            d["output"] = json.loads(d["output"])  # type: ignore[arg-type]
+        except Exception:
+            pass
+    return d

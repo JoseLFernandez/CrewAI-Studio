@@ -10,14 +10,21 @@ class MyTask:
         self.id = id or "T_" + rnd_id()
         self.description = description or "Identify the next big trend in AI. Focus on identifying pros and cons and the overall narrative."
         self.expected_output = expected_output or "A comprehensive 3 paragraphs long report on the latest AI trends."
-        self.agent = agent or ss.agents[0] if ss.agents else None
+        # Avoid hard dependency on Streamlit session in backend
+        try:
+            self.agent = agent or (ss.agents[0] if getattr(ss, 'agents', None) else None)
+        except Exception:
+            self.agent = agent
         self.async_execution = async_execution or False
         self.context_from_async_tasks_ids = context_from_async_tasks_ids or None
         self.context_from_sync_tasks_ids = context_from_sync_tasks_ids or None
         self.created_at = created_at or datetime.now().isoformat()
         self.edit_key = f'edit_{self.id}'
-        if self.edit_key not in ss:
-            ss[self.edit_key] = False
+        try:
+            if self.edit_key not in ss:
+                ss[self.edit_key] = False
+        except Exception:
+            pass
 
     @property
     def edit(self):
@@ -34,10 +41,11 @@ class MyTask:
         if context_from_sync_tasks:
             context.extend(context_from_sync_tasks)
         
+        agent_obj = self.agent.get_crewai_agent() if self.agent else None
         if context:
-            return Task(description=self.description, expected_output=self.expected_output, async_execution=self.async_execution, agent=self.agent.get_crewai_agent(), context=context)
+            return Task(description=self.description, expected_output=self.expected_output, async_execution=self.async_execution, agent=agent_obj, context=context)
         else:
-            return Task(description=self.description, expected_output=self.expected_output, async_execution=self.async_execution, agent=self.agent.get_crewai_agent())
+            return Task(description=self.description, expected_output=self.expected_output, async_execution=self.async_execution, agent=agent_obj)
 
     def delete(self):
         ss.tasks = [task for task in ss.tasks if task.id != self.id]
